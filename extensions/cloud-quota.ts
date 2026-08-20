@@ -54,10 +54,17 @@ export function colorRole(percent: number): "success" | "warning" | "error" {
 export type Severity = "none" | "warning" | "high" | "critical";
 const SEVERITY_RANK: Severity[] = ["none", "warning", "high", "critical"];
 
-export function severityOf(percent: number): Severity {
-	if (percent >= 100) return "critical";
-	if (percent >= 90) return "high";
-	if (percent >= 80) return "warning";
+/** [warning, high, critical] percent thresholds, aligned per provider. */
+export type Thresholds = [number, number, number];
+const DEFAULT_THRESHOLDS: Thresholds = [80, 90, 100];
+
+export function severityOf(
+	percent: number,
+	t: Thresholds = DEFAULT_THRESHOLDS,
+): Severity {
+	if (percent >= t[2]) return "critical";
+	if (percent >= t[1]) return "high";
+	if (percent >= t[0]) return "warning";
 	return "none";
 }
 
@@ -197,6 +204,8 @@ async function fetchArk(): Promise<Period[]> {
 interface Spec {
 	name: string;
 	fetch: () => Promise<Period[]>;
+	/** severity thresholds [warning, high, critical]; defaults to 80/90/100 */
+	thresholds?: Thresholds;
 }
 
 function specFor(ctx: ExtensionContext): Spec | undefined {
@@ -209,11 +218,12 @@ function specFor(ctx: ExtensionContext): Spec | undefined {
 		return undefined; // stale ctx
 	}
 	if (typeof baseUrl === "string" && baseUrl.toLowerCase().includes("volces.com")) {
-		return { name: "Ark", fetch: fetchArk };
+		return { name: "Ark", fetch: fetchArk, thresholds: [80, 90, 100] };
 	}
 	if (provider === "kimi-coding") {
 		return {
 			name: "Kimi",
+			thresholds: [80, 90, 100],
 			fetch: async () => {
 				const token = kimiToken();
 				if (!token) throw new Error("no kimi-coding credential");
@@ -226,6 +236,7 @@ function specFor(ctx: ExtensionContext): Spec | undefined {
 	if (provider === "ollama-cloud") {
 		return {
 			name: "Ollama",
+			thresholds: [80, 90, 100],
 			fetch: async () => {
 				const key = ollamaKey();
 				if (!key) throw new Error("no ollama-cloud apiKey");
@@ -253,7 +264,7 @@ export default function (pi: ExtensionAPI) {
 		for (const p of periods) {
 			if (!Number.isFinite(p.percent)) continue;
 			const key = `${spec.name}:${p.label}`;
-			const sev = severityOf(p.percent);
+			const sev = severityOf(p.percent, spec.thresholds);
 			const prev = lastSeverity.get(key) ?? "none";
 			if (SEVERITY_RANK.indexOf(sev) > SEVERITY_RANK.indexOf(prev))
 				escalated.push({ p, sev });
