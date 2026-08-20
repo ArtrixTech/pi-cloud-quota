@@ -13,6 +13,7 @@ Ollama 5h 2% · wk 5%
 - Reset countdown after the 5h window: hours when more than an hour remains, minutes otherwise (omitted for Ollama — the API reports no reset times)
 - Shows only while the active model belongs to a known provider
 - Fetches fresh quota after every settled agent turn; session start and model switches reuse a 5-minute cache
+- Quota warnings: toast on severity escalation (80% warning / 90% high / 100% critical); only critical notifies at error level
 
 ## Install
 

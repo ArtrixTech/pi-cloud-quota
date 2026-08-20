@@ -1,6 +1,6 @@
 {
 	"name": "pi-cloud-quota",
-	"version": "0.1.1",
+	"version": "0.2.0",
 	"description": "Subscription quota in the pi status bar for Ark (Volcengine), Kimi For Coding, and Ollama Cloud",
 	"license": "MIT",
 	"type": "module",

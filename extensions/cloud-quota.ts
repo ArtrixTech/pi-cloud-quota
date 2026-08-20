@@ -20,6 +20,9 @@
  * The status only shows while the active model matches a known provider.
  * Every settled agent turn fetches fresh data; session_start / model_select
  * reuse a 5-minute cache.
+ *
+ * Quota warnings: toast when a window's severity escalates (80% → warning,
+ * 90% → high, 100% → critical). Only critical notifies at error level.
  */
 
 import type {
@@ -46,6 +49,16 @@ export function colorRole(percent: number): "success" | "warning" | "error" {
 	if (percent >= 90) return "error";
 	if (percent >= 70) return "warning";
 	return "success";
+}
+
+export type Severity = "none" | "warning" | "high" | "critical";
+const SEVERITY_RANK: Severity[] = ["none", "warning", "high", "critical"];
+
+export function severityOf(percent: number): Severity {
+	if (percent >= 100) return "critical";
+	if (percent >= 90) return "high";
+	if (percent >= 80) return "warning";
+	return "none";
 }
 
 /** `↺3h` when more than an hour remains, `↺45m` below; undefined when past/unknown. */
@@ -232,6 +245,35 @@ export default function (pi: ExtensionAPI) {
 	const cache: Record<string, { periods: Period[]; fetchedAt: number }> = {};
 	const inFlight = new Set<string>();
 
+	const lastSeverity = new Map<string, Severity>();
+
+	/** Toast on severity escalation only; critical → error, warning/high → warning. */
+	function maybeWarn(ctx: ExtensionContext, spec: Spec, periods: Period[]) {
+		const escalated: { p: Period; sev: Severity }[] = [];
+		for (const p of periods) {
+			if (!Number.isFinite(p.percent)) continue;
+			const key = `${spec.name}:${p.label}`;
+			const sev = severityOf(p.percent);
+			const prev = lastSeverity.get(key) ?? "none";
+			if (SEVERITY_RANK.indexOf(sev) > SEVERITY_RANK.indexOf(prev))
+				escalated.push({ p, sev });
+			if (sev !== prev) lastSeverity.set(key, sev); // de-escalation tracked silently
+		}
+		if (escalated.length === 0) return;
+		const lines = escalated.map(({ p }) => {
+			const reset = formatReset(p.resetsAt);
+			return `- ${p.label}: ${Math.round(p.percent)}% used${reset ? `, resets in ${reset.slice(1)}` : ""}`;
+		});
+		const level = escalated.some((e) => e.sev === "critical")
+			? "error"
+			: "warning";
+		try {
+			ctx.ui.notify(`${spec.name} quota warning:\n${lines.join("\n")}`, level);
+		} catch {
+			/* stale ctx */
+		}
+	}
+
 	function apply(ctx: ExtensionContext, spec: Spec, periods: Period[]) {
 		const text = renderQuota(
 			(role, t) => ctx.ui.theme.fg(role, t),
@@ -248,6 +290,7 @@ export default function (pi: ExtensionAPI) {
 		const hit = cache[spec.name];
 		if (!force && hit && Date.now() - hit.fetchedAt < TTL_MS) {
 			apply(ctx, spec, hit.periods);
+			maybeWarn(ctx, spec, hit.periods);
 			return;
 		}
 		if (inFlight.has(spec.name)) return;
@@ -256,6 +299,7 @@ export default function (pi: ExtensionAPI) {
 			const periods = await spec.fetch();
 			cache[spec.name] = { periods, fetchedAt: Date.now() };
 			apply(ctx, spec, periods);
+			maybeWarn(ctx, spec, periods);
 		} catch {
 			if (!cache[spec.name]) {
 				ctx.ui.setStatus(
