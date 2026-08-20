@@ -1,0 +1,26 @@
+{
+	"name": "pi-cloud-quota",
+	"version": "0.1.0",
+	"description": "Subscription quota in the pi status bar for Ark (Volcengine), Kimi For Coding, and Ollama Cloud",
+	"license": "MIT",
+	"type": "module",
+	"keywords": [
+		"pi",
+		"pi-extension",
+		"pi-coding-agent",
+		"quota",
+		"usage",
+		"volcengine",
+		"ark",
+		"kimi",
+		"ollama"
+	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/ArtrixTech/pi-cloud-quota.git"
+	},
+	"pi": {
+		"extensions": ["./extensions/cloud-quota.ts"]
+	},
+	"files": ["extensions", "README.md", "LICENSE"]
+}
