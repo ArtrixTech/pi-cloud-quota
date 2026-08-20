@@ -12,7 +12,7 @@ Ollama 5h 2% · wk 5%
 - Color-graded: green < 70%, yellow < 90%, red ≥ 90%
 - Reset countdown after the 5h window: hours when more than an hour remains, minutes otherwise (omitted for Ollama — the API reports no reset times)
 - Shows only while the active model belongs to a known provider
-- Fetches fresh quota after every settled agent turn; session start and model switches reuse a 5-minute cache
+- Refreshes on a timer — 30s / 1min / 2min / 5min (default 1min), change via `/cloud-quota`; session start and model switches reuse a 5-minute cache
 - Quota warnings: toast on severity escalation (80% warning / 90% high / 100% critical); only critical notifies at error level
 
 ## Install
@@ -34,6 +34,7 @@ Then restart pi (or `/reload`).
 ## Notes
 
 - The footer entry uses pi's `setStatus` mechanism. If you run a theme with a fully custom footer (`setFooter`), it must render `footerData.getExtensionStatuses()` for the status to appear.
+- The refresh interval is persisted to `~/.pi/agent/cloud-quota.json` (`{"refreshIntervalMs": <ms>}`; only 30000/60000/120000/300000 are accepted, anything else falls back to the 1min default).
 - Ollama's `session` window is displayed as `5h` by convention; the API gives no window duration or reset time.
 - Ark data comes from `arkcli` (console-identical snapshot), so no Volcengine API key is needed by this extension.
 

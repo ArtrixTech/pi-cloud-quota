@@ -18,8 +18,9 @@
  *                (credential: ~/.pi/agent/models.json → providers.ollama-cloud.apiKey)
  *
  * The status only shows while the active model matches a known provider.
- * Every settled agent turn fetches fresh data; session_start / model_select
- * reuse a 5-minute cache.
+ * A background timer fetches fresh data on a configurable interval
+ * (30s / 1min / 2min / 5min, default 1min — change via `/cloud-quota`);
+ * session_start / model_select reuse a 5-minute cache.
  *
  * Quota warnings: toast when a window's severity escalates (80% → warning,
  * 90% → high, 100% → critical). Only critical notifies at error level.
@@ -30,7 +31,7 @@ import type {
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { execFile } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -40,6 +41,24 @@ const execFileP = promisify(execFile);
 const TTL_MS = 5 * 60 * 1000;
 const TIMEOUT_MS = 15_000;
 const STATUS_KEY = "cloud-quota";
+
+/** Refresh-interval options offered by `/cloud-quota`; default is 1min. */
+const INTERVALS = [
+	{ label: "30s", ms: 30_000 },
+	{ label: "1min", ms: 60_000 },
+	{ label: "2min", ms: 120_000 },
+	{ label: "5min", ms: 300_000 },
+] as const;
+const DEFAULT_INTERVAL_MS = INTERVALS[1].ms;
+const CONFIG_PATH = join(homedir(), ".pi", "agent", "cloud-quota.json");
+
+function readIntervalMs(): number {
+	const raw = readJson(CONFIG_PATH)?.refreshIntervalMs;
+	return INTERVALS.some((i) => i.ms === raw)
+		? (raw as number)
+		: DEFAULT_INTERVAL_MS;
+}
+
 
 export type Period = { label: string; percent: number; resetsAt?: string };
 
@@ -91,8 +110,7 @@ export function renderQuota(
 		.filter((p) => Number.isFinite(p.percent))
 		.map((p) => {
 			const pct = fg(colorRole(p.percent), `${Math.round(p.percent)}%`);
-			const reset =
-				p.label === "5h" ? formatReset(p.resetsAt, now) : undefined;
+			const reset = p.label === "5h" ? formatReset(p.resetsAt, now) : undefined;
 			return `${p.label} ${pct}${reset ? fg("dim", ` ${reset}`) : ""}`;
 		});
 	if (parts.length === 0) return undefined;
@@ -196,7 +214,11 @@ async function fetchArk(): Promise<Period[]> {
 		maxBuffer: 4 * 1024 * 1024,
 	});
 	const start = stdout.indexOf("{");
-	return parseArk(JSON.parse(start >= 0 ? stdout.slice(start) : stdout));
+	try {
+		return parseArk(JSON.parse(start >= 0 ? stdout.slice(start) : stdout));
+	} catch {
+		throw new Error("invalid `arkcli usage plan` output");
+	}
 }
 
 // ---- provider specs ----
@@ -217,7 +239,10 @@ function specFor(ctx: ExtensionContext): Spec | undefined {
 	} catch {
 		return undefined; // stale ctx
 	}
-	if (typeof baseUrl === "string" && baseUrl.toLowerCase().includes("volces.com")) {
+	if (
+		typeof baseUrl === "string" &&
+		baseUrl.toLowerCase().includes("volces.com")
+	) {
 		return { name: "Ark", fetch: fetchArk, thresholds: [80, 90, 100] };
 	}
 	if (provider === "kimi-coding") {
@@ -240,9 +265,7 @@ function specFor(ctx: ExtensionContext): Spec | undefined {
 			fetch: async () => {
 				const key = ollamaKey();
 				if (!key) throw new Error("no ollama-cloud apiKey");
-				return parseOllama(
-					await fetchJson("https://ollama.com/api/usage", key),
-				);
+				return parseOllama(await fetchJson("https://ollama.com/api/usage", key));
 			},
 		};
 	}
@@ -313,10 +336,7 @@ export default function (pi: ExtensionAPI) {
 			maybeWarn(ctx, spec, periods);
 		} catch {
 			if (!cache[spec.name]) {
-				ctx.ui.setStatus(
-					STATUS_KEY,
-					ctx.ui.theme.fg("dim", `${spec.name} ✗`),
-				);
+				ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", `${spec.name} ✗`));
 			}
 		} finally {
 			inFlight.delete(spec.name);
@@ -337,9 +357,43 @@ export default function (pi: ExtensionAPI) {
 		void refresh(ctx, spec, force);
 	}
 
+	let timer: number | undefined;
+	function startTimer(ms: number) {
+		if (timer !== undefined) clearInterval(timer);
+		timer = setInterval(() => {
+			if (!lastCtx) return;
+			const spec = specFor(lastCtx);
+			if (spec) void refresh(lastCtx, spec, true);
+		}, ms) as unknown as number;
+		(timer as unknown as { unref?: () => void }).unref?.();
+	}
+	startTimer(readIntervalMs());
+
+	pi.registerCommand("cloud-quota", {
+		description: "Set the quota refresh interval (30s / 1min / 2min / 5min)",
+		handler: async (_args, ctx) => {
+			if (!ctx.hasUI) return;
+			const current = readIntervalMs();
+			const labels = INTERVALS.map((i) =>
+				i.ms === current ? `${i.label} (current)` : i.label,
+			);
+			const choice = await ctx.ui.select(
+				"cloud-quota refresh interval",
+				labels,
+			);
+			if (!choice) return;
+			const sel = INTERVALS[labels.indexOf(choice)];
+			if (!sel) return;
+			writeFileSync(
+				CONFIG_PATH,
+				JSON.stringify({ refreshIntervalMs: sel.ms }, null, 2) + "\n",
+			);
+			startTimer(sel.ms);
+			ctx.ui.notify(`cloud-quota refresh interval: ${sel.label}`);
+			handle(ctx, true); // refresh now on the new cadence
+		},
+	});
+
 	pi.on("session_start", async (_event, ctx) => handle(ctx));
 	pi.on("model_select", async (_event, ctx) => handle(ctx));
-	pi.on("agent_settled", async () => {
-		if (lastCtx) handle(lastCtx, true); // fresh data after every turn
-	});
 }
