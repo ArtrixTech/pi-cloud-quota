@@ -18,6 +18,8 @@ Ollama 5h 2% · wk 5%
 ## Install
 
 ```bash
+pi install npm:pi-cloud-quota        # from the npm registry (recommended)
+# or track the latest main branch:
 pi install git:https://github.com/ArtrixTech/pi-cloud-quota
 ```
 
