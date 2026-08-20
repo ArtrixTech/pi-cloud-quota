@@ -18,7 +18,8 @@
  *                (credential: ~/.pi/agent/models.json → providers.ollama-cloud.apiKey)
  *
  * The status only shows while the active model matches a known provider.
- * 5-minute cache; refresh on session_start / model_select / agent_settled.
+ * Every settled agent turn fetches fresh data; session_start / model_select
+ * reuse a 5-minute cache.
  */
 
 import type {
@@ -243,9 +244,9 @@ export default function (pi: ExtensionAPI) {
 		);
 	}
 
-	async function refresh(ctx: ExtensionContext, spec: Spec) {
+	async function refresh(ctx: ExtensionContext, spec: Spec, force = false) {
 		const hit = cache[spec.name];
-		if (hit && Date.now() - hit.fetchedAt < TTL_MS) {
+		if (!force && hit && Date.now() - hit.fetchedAt < TTL_MS) {
 			apply(ctx, spec, hit.periods);
 			return;
 		}
@@ -267,7 +268,7 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
-	function handle(ctx: ExtensionContext) {
+	function handle(ctx: ExtensionContext, force = false) {
 		lastCtx = ctx;
 		const spec = specFor(ctx);
 		if (!spec) {
@@ -278,12 +279,12 @@ export default function (pi: ExtensionAPI) {
 			}
 			return;
 		}
-		void refresh(ctx, spec);
+		void refresh(ctx, spec, force);
 	}
 
 	pi.on("session_start", async (_event, ctx) => handle(ctx));
 	pi.on("model_select", async (_event, ctx) => handle(ctx));
 	pi.on("agent_settled", async () => {
-		if (lastCtx) handle(lastCtx);
+		if (lastCtx) handle(lastCtx, true); // fresh data after every turn
 	});
 }

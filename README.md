@@ -12,7 +12,7 @@ Ollama 5h 2% · wk 5%
 - Color-graded: green < 70%, yellow < 90%, red ≥ 90%
 - Reset countdown after the 5h window: hours when more than an hour remains, minutes otherwise (omitted for Ollama — the API reports no reset times)
 - Shows only while the active model belongs to a known provider
-- 5-minute cache; refreshes on session start, model switch, and after each settled agent run
+- Fetches fresh quota after every settled agent turn; session start and model switches reuse a 5-minute cache
 
 ## Install
 
