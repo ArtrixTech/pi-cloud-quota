@@ -2,7 +2,7 @@
 
 ## feat: predict Ollama Cloud reset times (global epoch-aligned grid)
 
-`(pending)` | 2026-08-22
+`759b0f1` | 2026-08-22
 
 - **Changes**: added `nextReset(now, periodMs, phaseMs)` helper; `parseOllama`
   now attaches predicted `resetsAt` to both windows (session = next multiple
