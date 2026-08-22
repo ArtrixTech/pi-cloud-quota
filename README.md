@@ -19,6 +19,13 @@ Ollama 5h 2% · wk 5%
 - Shows only while the active model belongs to a known provider
 - Refreshes on a timer — 30s / 1min / 2min / 5min (default 1min); session
   start and model switches reuse a 5-minute cache
+- Ark SSO lifecycle: when the Ark session is missing/expired the status shows
+  `Ark 未登录` (instead of a silent `✗`), and a toast tells you to run
+  `/cloud-quota login` — one command that opens the browser SSO flow and
+  refreshes the quota automatically on completion (also available as the
+  first entry of the `/cloud-quota` menu). The local refresh token is decoded
+  to warn ~12h before the server-side expiry (tokens are not rotated; each
+  login is valid ~48h)
 - Quota warnings: toast on severity escalation (80% warning / 90% high /
   100% critical); only critical notifies at error level
 - All display options adjustable via `/cloud-quota` or
@@ -38,7 +45,7 @@ Then restart pi (or `/reload`).
 
 | Provider | Requirement |
 |---|---|
-| Ark | Official [`arkcli`](https://www.npmjs.com/package/@volcengine/ark-cli): `CI=1 npm i -g @volcengine/ark-cli && arkcli auth login volc-sso`. Works with both Agent Plan (`/api/plan/v3`) and Coding Plan (`/api/coding*`) — any provider whose baseUrl is on `volces.com`. |
+| Ark | Official [`arkcli`](https://www.npmjs.com/package/@volcengine/ark-cli): `CI=1 npm i -g @volcengine/ark-cli && arkcli auth login volc-sso`. Works with both Agent Plan (`/api/plan/v3`) and Coding Plan (`/api/coding*`) — any provider whose baseUrl is on `volces.com`. The SSO session expires server-side ~48h after login; re-login with `/cloud-quota login` (the extension warns ~12h before expiry). |
 | Kimi | `kimi-coding` credential in `~/.pi/agent/auth.json` (API key or OAuth), e.g. via pi's built-in Kimi For Coding login. |
 | Ollama | `ollama-cloud` provider in `~/.pi/agent/models.json` with an `apiKey` (ollama.com). |
 

@@ -32,8 +32,8 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { execFile } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { execFile, spawn } from "node:child_process";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -262,6 +262,44 @@ export function parseOllama(json: any): Period[] {
 	return out;
 }
 
+// ---- Ark SSO session helpers ----
+
+/** True when an arkcli error message means "SSO session missing/expired, re-login needed". */
+export function isArkNotLoggedIn(message: string): boolean {
+	return /arkcli auth login volc-sso|requires Volcengine Ark SSO STS/.test(message);
+}
+
+const ARKCLI_IDENTITIES_DIR = join(homedir(), ".arkcli", "identities");
+
+/**
+ * Milliseconds until the Ark SSO refresh token expires, decoded from the local
+ * `~/.arkcli/identities/<id>/token.json` JWT (newest exp wins). Refresh tokens
+ * are not rotated and expire server-side ~48h after login, so the session
+ * must be refreshed manually before then.
+ */
+export function arkLoginExpiryMs(
+	identitiesDir = ARKCLI_IDENTITIES_DIR,
+): number | undefined {
+	let latest: number | undefined;
+	try {
+		for (const name of readdirSync(identitiesDir, { withFileTypes: true })) {
+			if (!name.isDirectory()) continue;
+			const raw = readJson(join(identitiesDir, name.name, "token.json"))
+				?.refresh_token;
+			if (typeof raw !== "string") continue;
+			const payload = JSON.parse(
+				Buffer.from(raw.split(".")[1], "base64url").toString("utf8"),
+			);
+			const exp = Number(payload?.exp);
+			if (Number.isFinite(exp) && exp > 0)
+				latest = Math.max(latest ?? 0, exp * 1000);
+		}
+	} catch {
+		return latest;
+	}
+	return latest;
+}
+
 // ---- credentials & fetching ----
 
 function readJson(path: string): any {
@@ -422,13 +460,115 @@ export default function (pi: ExtensionAPI) {
 			cache[spec.name] = { periods, fetchedAt: Date.now() };
 			apply(ctx, spec, periods);
 			maybeWarn(ctx, spec, periods);
-		} catch {
-			if (!cache[spec.name]) {
-				ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", `${spec.name} ✗`));
+			notified.delete("ark-needs-login");
+			if (spec.name === "Ark") maybeWarnLoginExpiry(ctx);
+		} catch (e) {
+			if (!cache[spec.name] && !(spec.name === "Ark" && loginInFlight)) {
+				const msg = e instanceof Error ? e.message : String(e);
+				if (spec.name === "Ark" && isArkNotLoggedIn(msg)) {
+					ctx.ui.setStatus(
+						STATUS_KEY,
+						ctx.ui.theme.fg("dim", `${spec.name} 未登录`),
+					);
+					notifyOnce(
+						ctx,
+						"ark-needs-login",
+						"Ark 未登录（SSO 会话过期）：运行 /cloud-quota login 重新登录",
+					);
+				} else {
+					ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", `${spec.name} ✗`));
+				}
 			}
 		} finally {
 			inFlight.delete(spec.name);
 		}
+	}
+
+	const notified = new Set<string>();
+	function notifyOnce(
+		ctx: ExtensionContext,
+		key: string,
+		message: string,
+		type: "info" | "warning" | "error" = "warning",
+	) {
+		if (notified.has(key)) return;
+		notified.add(key);
+		ctx.ui.notify(message, type);
+	}
+
+	const LOGIN_EXPIRY_WARN_MS = 12 * 60 * 60 * 1000;
+	/** Toast (once per expiry) when the Ark SSO session is close to expiring. */
+	function maybeWarnLoginExpiry(ctx: ExtensionContext) {
+		const exp = arkLoginExpiryMs();
+		if (exp === undefined) return;
+		const left = exp - Date.now();
+		if (left > LOGIN_EXPIRY_WARN_MS) return;
+		notifyOnce(
+			ctx,
+			`ark-login-expiry:${Math.floor(exp / 60_000)}`,
+			`Ark SSO 登录将于 ${new Date(exp).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 过期（约 ${Math.max(1, Math.round(left / 3_600_000))} 小时后）；运行 /cloud-quota login 重新登录`,
+		);
+	}
+
+	let loginInFlight = false;
+	const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
+	/** Start the interactive Ark SSO login (opens the browser), refresh on completion. */
+	function arkLogin(ctx: ExtensionContext) {
+		const spec = specFor(ctx);
+		if (!spec || spec.name !== "Ark") {
+			ctx.ui.notify("Ark SSO 登录仅在 Ark 模型下可用", "warning");
+			return;
+		}
+		if (loginInFlight) {
+			ctx.ui.notify("Ark 登录已在进行中，请完成浏览器授权", "info");
+			return;
+		}
+		loginInFlight = true;
+		ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", "Ark 登录中…"));
+		ctx.ui.notify(
+			"已启动火山 SSO 登录：浏览器将打开，完成授权后自动刷新用量",
+			"info",
+		);
+		const finish = (ok: boolean, message: string) => {
+			if (!loginInFlight) return;
+			loginInFlight = false;
+			ctx.ui.notify(message, ok ? "info" : "error");
+			if (ok) {
+				notified.delete("ark-needs-login");
+				void refresh(ctx, spec, true);
+			} else {
+				if (specFor(ctx)?.name === "Ark") {
+					ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", "Ark 未登录"));
+				}
+			}
+		};
+		let child: ReturnType<typeof spawn>;
+		try {
+			child = spawn("arkcli", ["auth", "login", "volc-sso"], {
+				stdio: "ignore",
+				detached: true,
+			});
+		} catch {
+			finish(false, "无法启动 arkcli，请确认已安装 @volcengine/ark-cli");
+			return;
+		}
+		child.unref();
+		const timer = setTimeout(
+			() => finish(false, "Ark 登录超时：请重新运行 /cloud-quota login"),
+			LOGIN_TIMEOUT_MS,
+		);
+		child.on("exit", (code) => {
+			clearTimeout(timer);
+			execFileP("arkcli", ["auth", "status"], { timeout: 10_000 })
+				.then(({ stdout }) => {
+					const ok = stdout.includes('"ok": true');
+					finish(
+						ok,
+						ok ? "Ark 登录成功，用量已刷新" : `Ark 登录失败（exit ${code ?? "?"}），请重试`,
+					);
+				})
+				.catch(() => finish(false, "Ark 登录失败，请重试"));
+		});
 	}
 
 	function handle(ctx: ExtensionContext, force = false) {
@@ -459,20 +599,28 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("cloud-quota", {
 		description:
-			"Configure cloud-quota: refresh interval, reset-time thresholds, status width",
-		handler: async (_args, ctx) => {
+			"Configure cloud-quota (refresh interval, thresholds, width) or log in to Ark",
+		handler: async (args, ctx) => {
 			if (!ctx.hasUI) return;
+			if (args.trim() === "login") {
+				arkLogin(ctx);
+				return;
+			}
 			const cfg = readConfig();
 			const intervalLabel = (ms: number) =>
 				INTERVALS.find((i) => i.ms === ms)?.label ?? `${ms}ms`;
-			const choice = await ctx.ui.select("cloud-quota settings", [
+			const choice = await ctx.ui.select("cloud-quota", [
+				"Ark SSO login (未登录/快过期时重新登录)",
 				`Refresh interval: ${intervalLabel(cfg.refreshIntervalMs)} (current)`,
 				`5h reset threshold: ${cfg.resetThresholds["5h"]}% remaining (current)`,
 				`Week reset threshold: ${cfg.resetThresholds.wk}% remaining (current)`,
 				`Max status width: ${cfg.maxWidth > 0 ? `${cfg.maxWidth} chars` : "off"} (current)`,
 			]);
 			if (!choice) return;
-
+			if (choice.startsWith("Ark SSO login")) {
+				arkLogin(ctx);
+				return;
+			}
 			const THRESHOLD_OPTIONS = [0, 20, 40, 60, 80, 90, 100];
 			const thLabel = (v: number) =>
 				v === 0 ? "never" : v === 100 ? "always" : `${v}% remaining`;
