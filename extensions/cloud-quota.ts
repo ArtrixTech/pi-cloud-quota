@@ -5,8 +5,10 @@
  * Format: `Ark 5h 91% ↺3h · wk 50% · mo 29%`
  *   - provider name prefix (Ark / Kimi / Ollama)
  *   - used percent per window, color-graded (green <70, yellow <90, red ≥90)
- *   - reset countdown after the 5h window: hours when >1h, minutes otherwise
- *     (omitted for Ollama: the API reports no reset times)
+ *   - reset countdown per window, shown only while remaining quota is below a
+ *     configurable threshold (defaults: 5h <80%, wk <40%); when the status
+ *     exceeds the width budget the 5h reset is kept and the rest dropped
+ *     (Ollama shows no reset: the API reports no reset times)
  *
  * Sources:
  *   Ark          shells out to `arkcli usage plan` (official @volcengine/ark-cli,
@@ -52,11 +54,40 @@ const INTERVALS = [
 const DEFAULT_INTERVAL_MS = INTERVALS[1].ms;
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "cloud-quota.json");
 
-function readIntervalMs(): number {
-	const raw = readJson(CONFIG_PATH)?.refreshIntervalMs;
-	return INTERVALS.some((i) => i.ms === raw)
-		? (raw as number)
-		: DEFAULT_INTERVAL_MS;
+/** Reset countdown shows while remaining quota < threshold, per window label. */
+const DEFAULT_RESET_THRESHOLDS: Record<string, number> = { "5h": 80, wk: 40 };
+/** Status width budget in visible chars; 0 = unlimited. */
+const DEFAULT_MAX_WIDTH = 40;
+
+interface QuotaConfig {
+	refreshIntervalMs: number;
+	resetThresholds: Record<string, number>;
+	maxWidth: number;
+}
+
+function readConfig(): QuotaConfig {
+	const raw = readJson(CONFIG_PATH);
+	const interval = raw?.refreshIntervalMs;
+	return {
+		refreshIntervalMs: INTERVALS.some((i) => i.ms === interval)
+			? (interval as number)
+			: DEFAULT_INTERVAL_MS,
+		resetThresholds: {
+			...DEFAULT_RESET_THRESHOLDS,
+			...(raw?.resetThresholds ?? {}),
+		},
+		maxWidth:
+			typeof raw?.maxWidth === "number" && Number.isFinite(raw.maxWidth)
+				? raw.maxWidth
+				: DEFAULT_MAX_WIDTH,
+	};
+}
+
+function saveConfig(patch: Partial<QuotaConfig>) {
+	writeFileSync(
+		CONFIG_PATH,
+		JSON.stringify({ ...readConfig(), ...patch }, null, 2) + "\n",
+	);
 }
 
 
@@ -87,7 +118,7 @@ export function severityOf(
 	return "none";
 }
 
-/** `↺3h` when more than an hour remains, `↺45m` below; undefined when past/unknown. */
+/** `↺3h` when more than an hour remains, `↺45m` below, `↺2d` for days; undefined when past/unknown. */
 export function formatReset(
 	resetsAt: string | undefined,
 	now = Date.now(),
@@ -97,24 +128,71 @@ export function formatReset(
 	if (!Number.isFinite(ms) || ms <= 0) return undefined;
 	const minutes = ms / 60_000;
 	if (minutes < 60) return `↺${Math.max(1, Math.round(minutes))}m`;
-	return `↺${Math.round(minutes / 60)}h`;
+	const hours = minutes / 60;
+	if (hours < 24) return `↺${Math.round(hours)}h`;
+	return `↺${Math.round(hours / 24)}d`;
+}
+
+export type RenderOptions = {
+	/** per-window-label remaining-% threshold; reset shows while remaining < it */
+	resetThresholds?: Record<string, number>;
+	/** status width budget in visible chars; 0 = unlimited */
+	maxWidth?: number;
+};
+
+/** When the status exceeds the width budget, this window's reset is kept last. */
+const PRIORITY_RESET_LABEL = "5h";
+
+function visibleLength(s: string): number {
+	return s.replace(/\x1b\[[0-9;]*m/g, "").length;
 }
 
 export function renderQuota(
 	fg: (role: string, text: string) => string,
 	name: string,
 	periods: Period[],
+	opts: RenderOptions = {},
 	now = Date.now(),
 ): string | undefined {
-	const parts = periods
-		.filter((p) => Number.isFinite(p.percent))
-		.map((p) => {
-			const pct = fg(colorRole(p.percent), `${Math.round(p.percent)}%`);
-			const reset = p.label === "5h" ? formatReset(p.resetsAt, now) : undefined;
-			return `${p.label} ${pct}${reset ? fg("dim", ` ${reset}`) : ""}`;
-		});
-	if (parts.length === 0) return undefined;
-	return `${name} ${parts.join(" · ")}`;
+	const thresholds = { ...DEFAULT_RESET_THRESHOLDS, ...opts.resetThresholds };
+	const maxWidth = opts.maxWidth ?? DEFAULT_MAX_WIDTH;
+
+	const resetFor = (p: Period): string | undefined => {
+		const th = thresholds[p.label];
+		if (th === undefined) return undefined; // no threshold → never show
+		if (100 - p.percent >= th) return undefined; // plenty remaining → hide
+		return formatReset(p.resetsAt, now);
+	};
+
+	const render = (
+		periods: Period[],
+		resetLabels: ReadonlySet<string> | null,
+	): string | undefined => {
+		const parts = periods
+			.filter((p) => Number.isFinite(p.percent))
+			.map((p) => {
+				const pct = fg(colorRole(p.percent), `${Math.round(p.percent)}%`);
+				const reset = resetLabels?.has(p.label) ? resetFor(p) : undefined;
+				return `${p.label} ${pct}${reset ? fg("dim", ` ${reset}`) : ""}`;
+			});
+		if (parts.length === 0) return undefined;
+		return `${name} ${parts.join(" · ")}`;
+	};
+
+	const fits = (s: string | undefined) =>
+		s !== undefined && (maxWidth <= 0 || visibleLength(s) <= maxWidth);
+
+	// width fallback: all resets → 5h reset only → 5h period only → no resets
+	let text = render(periods, new Set(periods.map((p) => p.label)));
+	if (!fits(text)) text = render(periods, new Set([PRIORITY_RESET_LABEL]));
+	if (!fits(text))
+		text = render(
+			periods.filter((p) => p.label === PRIORITY_RESET_LABEL),
+			new Set([PRIORITY_RESET_LABEL]),
+		);
+	if (!fits(text))
+		text = render(periods.filter((p) => p.label === PRIORITY_RESET_LABEL), null);
+	return text;
 }
 
 export function parseArk(json: any): Period[] {
@@ -309,10 +387,12 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function apply(ctx: ExtensionContext, spec: Spec, periods: Period[]) {
+		const cfg = readConfig();
 		const text = renderQuota(
 			(role, t) => ctx.ui.theme.fg(role, t),
 			spec.name,
 			periods,
+			{ resetThresholds: cfg.resetThresholds, maxWidth: cfg.maxWidth },
 		);
 		ctx.ui.setStatus(
 			STATUS_KEY,
@@ -367,30 +447,87 @@ export default function (pi: ExtensionAPI) {
 		}, ms) as unknown as number;
 		(timer as unknown as { unref?: () => void }).unref?.();
 	}
-	startTimer(readIntervalMs());
+	startTimer(readConfig().refreshIntervalMs);
 
 	pi.registerCommand("cloud-quota", {
-		description: "Set the quota refresh interval (30s / 1min / 2min / 5min)",
+		description:
+			"Configure cloud-quota: refresh interval, reset-time thresholds, status width",
 		handler: async (_args, ctx) => {
 			if (!ctx.hasUI) return;
-			const current = readIntervalMs();
-			const labels = INTERVALS.map((i) =>
-				i.ms === current ? `${i.label} (current)` : i.label,
-			);
-			const choice = await ctx.ui.select(
-				"cloud-quota refresh interval",
-				labels,
-			);
+			const cfg = readConfig();
+			const intervalLabel = (ms: number) =>
+				INTERVALS.find((i) => i.ms === ms)?.label ?? `${ms}ms`;
+			const choice = await ctx.ui.select("cloud-quota settings", [
+				`Refresh interval: ${intervalLabel(cfg.refreshIntervalMs)} (current)`,
+				`5h reset threshold: ${cfg.resetThresholds["5h"]}% remaining (current)`,
+				`Week reset threshold: ${cfg.resetThresholds.wk}% remaining (current)`,
+				`Max status width: ${cfg.maxWidth > 0 ? `${cfg.maxWidth} chars` : "off"} (current)`,
+			]);
 			if (!choice) return;
-			const sel = INTERVALS[labels.indexOf(choice)];
-			if (!sel) return;
-			writeFileSync(
-				CONFIG_PATH,
-				JSON.stringify({ refreshIntervalMs: sel.ms }, null, 2) + "\n",
-			);
-			startTimer(sel.ms);
-			ctx.ui.notify(`cloud-quota refresh interval: ${sel.label}`);
-			handle(ctx, true); // refresh now on the new cadence
+
+			const THRESHOLD_OPTIONS = [0, 20, 40, 60, 80, 90, 100];
+			const thLabel = (v: number) =>
+				v === 0 ? "never" : v === 100 ? "always" : `${v}% remaining`;
+			const pick = async (
+				title: string,
+				options: number[],
+				label: (v: number) => string,
+				current: number,
+			): Promise<number | undefined> => {
+				const labels = options.map((v) =>
+					v === current ? `${label(v)} (current)` : label(v),
+				);
+				return options[labels.indexOf(await ctx.ui.select(title, labels))];
+			};
+
+			if (choice.startsWith("Refresh interval")) {
+				const labels = INTERVALS.map((i) =>
+					i.ms === cfg.refreshIntervalMs ? `${i.label} (current)` : i.label,
+				);
+				const sel = INTERVALS[
+					labels.indexOf(await ctx.ui.select("refresh interval", labels))
+				];
+				if (!sel) return;
+				saveConfig({ refreshIntervalMs: sel.ms });
+				startTimer(sel.ms);
+				ctx.ui.notify(`cloud-quota refresh interval: ${sel.label}`);
+				handle(ctx, true); // refresh now on the new cadence
+			} else if (choice.startsWith("5h reset threshold")) {
+				const v = await pick(
+					"5h reset threshold (show reset while remaining < value)",
+					THRESHOLD_OPTIONS,
+					thLabel,
+					cfg.resetThresholds["5h"],
+				);
+				if (v === undefined) return;
+				saveConfig({ resetThresholds: { ...cfg.resetThresholds, "5h": v } });
+				ctx.ui.notify(`cloud-quota 5h reset threshold: ${thLabel(v)}`);
+				handle(ctx, false); // re-render with new settings
+			} else if (choice.startsWith("Week reset threshold")) {
+				const v = await pick(
+					"week reset threshold (show reset while remaining < value)",
+					THRESHOLD_OPTIONS,
+					thLabel,
+					cfg.resetThresholds.wk,
+				);
+				if (v === undefined) return;
+				saveConfig({ resetThresholds: { ...cfg.resetThresholds, wk: v } });
+				ctx.ui.notify(`cloud-quota week reset threshold: ${thLabel(v)}`);
+				handle(ctx, false);
+			} else if (choice.startsWith("Max status width")) {
+				const WIDTH_OPTIONS = [0, 24, 32, 40, 48, 64];
+				const wLabel = (v: number) => (v === 0 ? "off" : `${v} chars`);
+				const v = await pick(
+					"max status width (0 = off)",
+					WIDTH_OPTIONS,
+					wLabel,
+					cfg.maxWidth,
+				);
+				if (v === undefined) return;
+				saveConfig({ maxWidth: v });
+				ctx.ui.notify(`cloud-quota max status width: ${wLabel(v)}`);
+				handle(ctx, false);
+			}
 		},
 	});
 

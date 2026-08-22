@@ -10,10 +10,19 @@ Ollama 5h 2% · wk 5%
 
 - Provider name prefix (`Ark` / `Kimi` / `Ollama`), used percent per window
 - Color-graded: green < 70%, yellow < 90%, red ≥ 90%
-- Reset countdown after the 5h window: hours when more than an hour remains, minutes otherwise (omitted for Ollama — the API reports no reset times)
+- Reset countdown per window, shown only while remaining quota is below a
+  configurable threshold (defaults: 5h < 80%, week < 40%); hours/minutes/days
+  formatting (omitted for Ollama — the API reports no reset times)
+- Width budget: when the status exceeds `maxWidth` (default 40 visible chars),
+  the 5h reset is kept and the week reset is dropped first, then non-5h
+  windows, then the 5h reset
 - Shows only while the active model belongs to a known provider
-- Refreshes on a timer — 30s / 1min / 2min / 5min (default 1min), change via `/cloud-quota`; session start and model switches reuse a 5-minute cache
-- Quota warnings: toast on severity escalation (80% warning / 90% high / 100% critical); only critical notifies at error level
+- Refreshes on a timer — 30s / 1min / 2min / 5min (default 1min); session
+  start and model switches reuse a 5-minute cache
+- Quota warnings: toast on severity escalation (80% warning / 90% high /
+  100% critical); only critical notifies at error level
+- All display options adjustable via `/cloud-quota` or
+  `~/.pi/agent/cloud-quota.json`
 
 ## Install
 
@@ -36,7 +45,14 @@ Then restart pi (or `/reload`).
 ## Notes
 
 - The footer entry uses pi's `setStatus` mechanism. If you run a theme with a fully custom footer (`setFooter`), it must render `footerData.getExtensionStatuses()` for the status to appear.
-- The refresh interval is persisted to `~/.pi/agent/cloud-quota.json` (`{"refreshIntervalMs": <ms>}`; only 30000/60000/120000/300000 are accepted, anything else falls back to the 1min default).
+- Settings persist to `~/.pi/agent/cloud-quota.json`:
+  - `refreshIntervalMs` — 30000/60000/120000/300000 (default 60000)
+  - `resetThresholds` — per-window remaining-% threshold for showing the
+    reset countdown, e.g. `{"5h": 80, "wk": 40}` (default); a window without
+    an entry never shows a reset
+  - `maxWidth` — status width budget in visible chars (default 40; 0 =
+    unlimited)
+  All adjustable via `/cloud-quota`.
 - Ollama's `session` window is displayed as `5h` by convention; the API gives no window duration or reset time.
 - Ark data comes from `arkcli` (console-identical snapshot), so no Volcengine API key is needed by this extension.
 
