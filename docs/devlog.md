@@ -2,7 +2,7 @@
 
 ## feat: threshold-gated reset display with width priority
 
-`4627dba` | 2026-08-22
+`ad5e384` | 2026-08-22
 
 - **Changes**: reset countdown now shows per window only while remaining quota
   is below a configurable threshold (defaults 5h <80%, wk <40%); status width
