@@ -1,5 +1,23 @@
 # devlog
 
+## fix: parse weekly resetTime for Kimi usage
+
+`e8945c9` | 2026-08-22
+
+- **Changes**: `parseKimi` now reads `usage.resetTime` into the `wk` period's
+  `resetsAt`, so the weekly reset countdown can render (previously only the
+  5h window carried a reset time).
+- **Reason**: user reported Kimi showed no reset time at all; the 5h reset was
+  hidden by the new threshold gate (89% remaining ≥ 80%), and the wk reset
+  never rendered because `usage.resetTime` was never parsed.
+- **User feedback**: "改第二个。问题是wk无法显示。"
+- **Process**: verified live API response carries `usage.resetTime`
+  (2026-08-23T03:33:19Z); with config wk:100 the rendered line is
+  `Kimi 5h 11% · wk 78% ↺23h` (25 chars ≤ maxWidth 40).
+- **Result**: 5 offline assertions pass (`node --experimental-strip-types`).
+- **Notes**: threshold semantics unchanged; 5h reset still hidden while
+  remaining ≥ 80%.
+
 ## feat: threshold-gated reset display with width priority
 
 `ad5e384` | 2026-08-22
