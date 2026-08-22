@@ -1,5 +1,33 @@
 # devlog
 
+## feat(ark): one-command SSO re-login with expiry warning
+
+`546aa10` | 2026-08-22
+
+- **Changes**: `Ark 未登录` status (was silent `✗`) when arkcli reports a
+  missing/expired SSO session; `/cloud-quota login` (and first `/cloud-quota`
+  menu entry) spawns `arkcli auth login volc-sso` detached, polls
+  `arkcli auth status` on exit, and refreshes quota on success (10min timeout,
+  `Ark 登录中…` during the flow); `arkLoginExpiryMs` decodes the refresh-token
+  JWT exp from `~/.arkcli/identities/<id>/token.json` and toasts ~12h before
+  expiry.
+- **Reason**: user asked for (1) a clickable login when not logged in, (2) a
+  longer single-login validity.
+- **User feedback**: "1.ark增加在未登陆的时候可点击登陆的功能 2是否可以延长单次登陆有效期？"
+- **Process**: pi's footer renders `setStatus` text without any click/mouse
+  support (verified in footer.js + types.d.ts), so a clickable status is
+  impossible — implemented a command instead. Login validity is a server-side
+  policy: refresh tokens are NOT rotated (verified by hashing token.json
+  before/after `usage plan`) and expire 48h after login (JWT iat→exp), and
+  `usage plan` rejects `--api-key` (control-plane only), so the client cannot
+  extend it; the plugin now warns before expiry instead.
+- **Result**: esbuild parse + 10 offline assertions pass; live `exp` decoded
+  as 2026-08-24 15:02:14.
+- **Notes**: gotcha — a JSDoc comment containing `identities/*/token.json`
+  embeds `*/` and prematurely closes the block comment, breaking both node's
+  TS stripper and esbuild at a later line; rewrote as `<id>`. package-lock.json
+  remains untracked (pre-existing).
+
 ## fix: parse weekly resetTime for Kimi usage
 
 `e8945c9` | 2026-08-22
