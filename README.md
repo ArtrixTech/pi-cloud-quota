@@ -5,14 +5,15 @@ Subscription quota in the [pi](https://github.com/earendil-works/pi-coding-agent
 ```
 Ark 5h 91% ↺3h · wk 50% · mo 29%
 Kimi 5h 72% ↺45m · wk 14%
-Ollama 5h 2% · wk 5%
+Ollama 5h 2% ↺4h · wk 5%
 ```
 
 - Provider name prefix (`Ark` / `Kimi` / `Ollama`), used percent per window
 - Color-graded: green < 70%, yellow < 90%, red ≥ 90%
 - Reset countdown per window, shown only while remaining quota is below a
   configurable threshold (defaults: 5h < 80%, week < 40%); hours/minutes/days
-  formatting (omitted for Ollama — the API reports no reset times)
+  formatting (Ollama: predicted from the global reset grid — the API reports
+  no reset times)
 - Width budget: when the status exceeds `maxWidth` (default 40 visible chars),
   the 5h reset is kept and the week reset is dropped first, then non-5h
   windows, then the 5h reset
@@ -61,12 +62,13 @@ Then restart pi (or `/reload`).
     unlimited)
   All adjustable via `/cloud-quota`.
 - Ollama's `session` window is displayed as `5h` by convention; the API gives no window duration or reset time.
+- Ollama Cloud resets are **global** — the same instant for every account — on an epoch-aligned grid: session resets every 5h (multiples of 5h since Unix epoch, so the hour cycles through all 24 over 5 days), weekly resets every 7d at Monday 00:00 UTC. The extension predicts the next reset locally (`nextReset`); community-verified against the settings-page countdown (ollama/ollama#12532).
 - Ark data comes from `arkcli` (console-identical snapshot), so no Volcengine API key is needed by this extension.
 
 ## Development
 
 The extension is plain TypeScript loaded directly by pi (no build step). The pure
-helpers (`parseArk` / `parseKimi` / `parseOllama` / `renderQuota` / `formatReset`)
+helpers (`parseArk` / `parseKimi` / `parseOllama` / `renderQuota` / `formatReset` / `nextReset`)
 are exported for offline testing:
 
 ```bash

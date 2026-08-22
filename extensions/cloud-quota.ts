@@ -8,7 +8,9 @@
  *   - reset countdown per window, shown only while remaining quota is below a
  *     configurable threshold (defaults: 5h <80%, wk <40%); when the status
  *     exceeds the width budget the 5h reset is kept and the rest dropped
- *     (Ollama shows no reset: the API reports no reset times)
+ *     (Ollama: predicted from the global reset grid — the API reports no
+ *     reset times, but resets are epoch-aligned and identical for all
+ *     accounts, see parseOllama)
  *
  * Sources:
  *   Ark          shells out to `arkcli usage plan` (official @volcengine/ark-cli,
@@ -147,6 +149,22 @@ function visibleLength(s: string): number {
 	return s.replace(/\x1b\[[0-9;]*m/g, "").length;
 }
 
+/**
+ * Next boundary of a global reset grid: boundaries at `phase + k*period`
+ * (phase defaults to epoch). Ollama Cloud resets are global — the same
+ * instant for every account — so the next reset is computable locally:
+ * session = every 5h on an epoch-aligned grid, weekly = every 7d starting
+ * Monday 00:00 UTC (epoch + 4d). Community-verified, see ollama/ollama#12532.
+ */
+export function nextReset(
+	now: number,
+	periodMs: number,
+	phaseMs = 0,
+): string {
+	const remain = periodMs - ((now - phaseMs) % periodMs);
+	return new Date(now + remain).toISOString();
+}
+
 export function renderQuota(
 	fg: (role: string, text: string) => string,
 	name: string,
@@ -251,14 +269,28 @@ export function parseKimi(json: any): Period[] {
 	return out;
 }
 
-export function parseOllama(json: any): Period[] {
+export function parseOllama(json: any, now = Date.now()): Period[] {
 	// session window is displayed as "5h" per user convention; the API
-	// reports usage as 0-1 fractions and no reset times.
+	// reports usage as 0-1 fractions and no reset times. Resets are global
+	// (same instant for all accounts) on an epoch-aligned grid, so the next
+	// reset is predicted locally: session = multiples of 5h since epoch,
+	// weekly = Monday 00:00 UTC. Verified against community observations
+	// (ollama/ollama#12532) and the settings-page countdown.
 	const out: Period[] = [];
 	const sess = Number(json?.limits?.session?.usage);
-	if (Number.isFinite(sess)) out.push({ label: "5h", percent: sess * 100 });
+	if (Number.isFinite(sess))
+		out.push({
+			label: "5h",
+			percent: sess * 100,
+			resetsAt: nextReset(now, 5 * 60 * 60 * 1000),
+		});
 	const wk = Number(json?.limits?.weekly?.usage);
-	if (Number.isFinite(wk)) out.push({ label: "wk", percent: wk * 100 });
+	if (Number.isFinite(wk))
+		out.push({
+			label: "wk",
+			percent: wk * 100,
+			resetsAt: nextReset(now, 7 * 24 * 60 * 60 * 1000, 4 * 24 * 60 * 60 * 1000),
+		});
 	return out;
 }
 

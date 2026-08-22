@@ -1,5 +1,32 @@
 # devlog
 
+## feat: predict Ollama Cloud reset times (global epoch-aligned grid)
+
+`(pending)` | 2026-08-22
+
+- **Changes**: added `nextReset(now, periodMs, phaseMs)` helper; `parseOllama`
+  now attaches predicted `resetsAt` to both windows (session = next multiple
+  of 5h since Unix epoch, weekly = next Monday 00:00 UTC); status bar shows
+  the ↺ countdown for Ollama's 5h window; warning toasts now include weekly
+  reset countdown too; README updated.
+- **Reason**: user asked whether Ollama Cloud resets are global and whether
+  the reset time is predictable, to add the missing reset countdown.
+- **User feedback**: "ollama cloud重置似乎是全球同一个时间（你调研一下）。是否可以预测重置时间？"
+- **Process**: researched ollama/ollama#12532 — rick-github posted epoch-aligned
+  formulas (session `18000-(now%18000)`, weekly `604800-((now-4d)%604800)`)
+  claiming resets are identical for everybody; moritzfl independently confirmed
+  they match his settings-page countdown. Verified formula self-consistency by
+  back-computing run times (04:11:57Z / 04:12:36Z, 39s apart) and confirmed the
+  weekly phase is exactly 4.0 days (→ Monday 00:00 UTC). The `/api/usage`
+  response has no reset fields; the settings page HTML carries `data-time`
+  ISO timestamps (CodexBar parses them) but needs a session cookie.
+- **Result**: `nextReset` reproduces both community-verified examples exactly;
+  status bar now renders e.g. `Ollama 5h 2% ↺4h · wk 64%`.
+- **Notes**: prediction is community-verified but not officially documented.
+  A background poll of the user's own account (`/tmp/ollama_quota_poll.log`,
+  pid 23366) watches for the session reset at 2026-08-22T17:00:00Z to confirm
+  empirically; if the phase ever shifts, only `nextReset`'s constants change.
+
 ## feat(ark): one-command SSO re-login with expiry warning
 
 `546aa10` | 2026-08-22
@@ -70,6 +97,7 @@
 - **Notes**: threshold semantics = remaining quota (100 − used); "5h剩余<80%"
   interpreted as remaining quota, not remaining time. `package-lock.json`
   untracked in repo (pre-existing).
+
 
 ## feat: timer-based refresh with configurable interval
 
