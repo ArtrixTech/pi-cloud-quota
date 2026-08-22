@@ -239,7 +239,15 @@ export function parseKimi(json: any): Period[] {
 	}
 	if (best) out.push(best);
 	const weekly = pct(json?.usage?.used, json?.usage?.limit);
-	if (Number.isFinite(weekly)) out.push({ label: "wk", percent: weekly });
+	if (Number.isFinite(weekly))
+		out.push({
+			label: "wk",
+			percent: weekly,
+			resetsAt:
+				typeof json?.usage?.resetTime === "string"
+					? json.usage.resetTime
+					: undefined,
+		});
 	return out;
 }
 
