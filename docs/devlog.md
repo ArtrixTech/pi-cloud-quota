@@ -1,5 +1,29 @@
 # devlog
 
+## fix(kimi): keep 5h window visible when its quota limit is 0
+
+`709ca07` | 2026-08-23
+
+- **Changes**: `parseKimi`'s `pct` helper now treats a zero/negative quota
+  limit as 0% (100% when usage is still reported against it) instead of NaN,
+  so a zero-limit 5h window stays in the status bar (e.g. `Kimi 5h 0% · wk
+  20%`) instead of vanishing. Investigated monthly display for Kimi: the
+  `usages` API exposes only the 7-day `usage` + minute `limits[]` windows —
+  no monthly field exists on any endpoint, so `mo` stays Ark-only.
+- **Reason**: user reported the 5h window disappearing when its limit is 0.
+- **User feedback**: "有的时候不同provider（尤其是kimi）的5h会不显示（此时5h限额是0），还是要显示的" + "看看kimi能不能加入月限额显示".
+- **Process**: live-inspected `GET api.kimi.com/coding/v1/usages` with the
+  user's token (response has `usage` weekly + one 300-min window only;
+  `totalQuota` empty, `boosterWallet` is currency top-up limits); probed 6
+  alternate endpoints — all 404; community parsers (onWatch, codexbar,
+  usagebar, openusage, spec-kimi-code) extract only 5h + weekly; official
+  docs confirm only 7-day + rolling 5h windows. Verified the fix with a
+  node --experimental-strip-types test of `parseKimi`/`renderQuota` on four
+  response shapes.
+- **Result**: zero-limit 5h renders `Kimi 5h 0% · wk 20%`; normal responses
+  unchanged. Monthly display: not possible — no monthly data in the API.
+- **Notes**: none.
+
 ## feat: predict Ollama Cloud reset times (global epoch-aligned grid)
 
 `759b0f1` | 2026-08-22
