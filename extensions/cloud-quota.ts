@@ -231,9 +231,12 @@ export function parseKimi(json: any): Period[] {
 	const pct = (used: any, limit: any): number => {
 		const u = Number(used);
 		const l = Number(limit);
-		return Number.isFinite(u) && Number.isFinite(l) && l > 0
-			? (u / l) * 100
-			: NaN;
+		if (!Number.isFinite(u) || !Number.isFinite(l)) return NaN;
+		// A window with a zero quota limit still exists and must stay visible
+		// (Kimi's 5h window shows as 0% while its limit is 0); usage reported
+		// against a zero limit reads as fully consumed.
+		if (l <= 0) return u > 0 ? 100 : 0;
+		return (u / l) * 100;
 	};
 	const out: Period[] = [];
 	// rolling windows: pick the shortest-duration one (300min = 5h)
