@@ -391,6 +391,12 @@ async function fetchArk(): Promise<Period[]> {
 
 // ---- provider specs ----
 
+const ARK_SPEC: Spec = {
+	name: "Ark",
+	fetch: fetchArk,
+	thresholds: [80, 90, 100],
+};
+
 interface Spec {
 	name: string;
 	fetch: () => Promise<Period[]>;
@@ -411,7 +417,7 @@ function specFor(ctx: ExtensionContext): Spec | undefined {
 		typeof baseUrl === "string" &&
 		baseUrl.toLowerCase().includes("volces.com")
 	) {
-		return { name: "Ark", fetch: fetchArk, thresholds: [80, 90, 100] };
+		return ARK_SPEC;
 	}
 	if (provider === "kimi-coding") {
 		return {
@@ -558,11 +564,6 @@ export default function (pi: ExtensionAPI) {
 	const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
 	/** Start the interactive Ark SSO login (opens the browser), refresh on completion. */
 	function arkLogin(ctx: ExtensionContext) {
-		const spec = specFor(ctx);
-		if (!spec || spec.name !== "Ark") {
-			ctx.ui.notify("Ark SSO 登录仅在 Ark 模型下可用", "warning");
-			return;
-		}
 		if (loginInFlight) {
 			ctx.ui.notify("Ark 登录已在进行中，请完成浏览器授权", "info");
 			return;
@@ -579,11 +580,9 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify(message, ok ? "info" : "error");
 			if (ok) {
 				notified.delete("ark-needs-login");
-				void refresh(ctx, spec, true);
+				void refresh(ctx, ARK_SPEC, true);
 			} else {
-				if (specFor(ctx)?.name === "Ark") {
-					ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", "Ark 未登录"));
-				}
+				ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("dim", "Ark 未登录"));
 			}
 		};
 		let child: ReturnType<typeof spawn>;
