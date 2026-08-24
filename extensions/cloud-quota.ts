@@ -120,6 +120,15 @@ export function severityOf(
 	return "none";
 }
 
+/** True when `arkcli auth status` stdout describes a logged-in SSO session. */
+export function arkAuthOk(stdout: string): boolean {
+	try {
+		return (JSON.parse(stdout) as { logged_in?: boolean }).logged_in === true;
+	} catch {
+		return stdout.includes('"logged_in": true');
+	}
+}
+
 /** `↺3h` when more than an hour remains, `↺45m` below, `↺2d` for days; undefined when past/unknown. */
 export function formatReset(
 	resetsAt: string | undefined,
@@ -596,10 +605,12 @@ export default function (pi: ExtensionAPI) {
 			clearTimeout(timer);
 			execFileP("arkcli", ["auth", "status"], { timeout: 10_000 })
 				.then(({ stdout }) => {
-					const ok = stdout.includes('"ok": true');
+					const ok = arkAuthOk(stdout);
 					finish(
 						ok,
-						ok ? "Ark 登录成功，用量已刷新" : `Ark 登录失败（exit ${code ?? "?"}），请重试`,
+						ok
+							? "Ark 登录成功，用量已刷新"
+							: `Ark 登录失败（exit ${code ?? "?"}），请重试`,
 					);
 				})
 				.catch(() => finish(false, "Ark 登录失败，请重试"));
