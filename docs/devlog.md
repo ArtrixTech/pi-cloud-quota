@@ -1,5 +1,47 @@
 # devlog
 
+## feat(ark): allow SSO login regardless of current model
+
+`05c15fa` | 2026-08-24
+
+- **Changes**: removed the `spec.name !== "Ark"` gate in `arkLogin` (the
+  "Ark SSO 登录仅在 Ark 模型下可用" warning); success now refreshes via a
+  new module-level `ARK_SPEC` constant (also reused by `specFor`), failure
+  always sets the "Ark 未登录" status.
+- **Reason**: user wants the login usable from any model — the login only
+  touches arkcli credentials, not the active provider.
+- **User feedback**: "Warning: Ark SSO 登录仅在 Ark 模型下可用 这个可以不用，管他啥模型不影响"
+- **Process**: previously `finish(true)` refreshed the *current model's*
+  spec (which could be Kimi or nothing); with the gate gone, refreshing
+  `ARK_SPEC` directly is the only correct target — the login is about Ark,
+  so the status bar shows Ark usage right after login.
+- **Result**: esbuild parse OK.
+
+## fix(ark): detect login success via logged_in status field
+
+`add529b` | 2026-08-24
+
+- **Changes**: new pure helper `arkAuthOk(stdout)` parses `arkcli auth status`
+  JSON and checks `logged_in === true` (substring fallback for non-JSON
+  output); `arkLogin`'s exit handler now uses it instead of the literal
+  `stdout.includes('"ok": true')`.
+- **Reason**: user reported that Ark login shows an "exit 0" error toast even
+  though the login actually succeeded.
+- **User feedback**: "cloud quota，用ark登陆会显示exit 0错误，但实际上更新成功了。"
+- **Process**: verified live `arkcli auth status` output — the literal
+  `"ok": true` appears 0 times (real success signals are `"logged_in": true`
+  and `control_plane_auth.status` `"ok"`); the old predicate was therefore
+  always false and every successful login was misreported as
+  "Ark 登录失败（exit 0）" (exit 0 = the login process exited normally).
+  The predicate was written from an assumed output format, never verified
+  against real output. Also noticed arkcli auto-updated 1.0.18 → 1.0.19
+  during verification; 1.0.19 output structure is unchanged.
+- **Result**: esbuild parse OK; 5 offline assertions pass, including real
+  captured status output (old predicate false → new helper true).
+- **Notes**: failure toast still prints `exit ${code}`; with the predicate
+  fixed, an exit-0 failure no longer occurs on success, and the exit code
+  stays informative for genuine failures.
+
 ## fix(kimi): keep 5h window visible when its quota limit is 0
 
 `709ca07` | 2026-08-23
@@ -23,7 +65,6 @@
 - **Result**: zero-limit 5h renders `Kimi 5h 0% · wk 20%`; normal responses
   unchanged. Monthly display: not possible — no monthly data in the API.
 - **Notes**: none.
-
 ## feat: predict Ollama Cloud reset times (global epoch-aligned grid)
 
 `759b0f1` | 2026-08-22
