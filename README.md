@@ -1,23 +1,30 @@
 # pi-cloud-quota
 
-Subscription quota in the [pi](https://github.com/earendil-works/pi-coding-agent) status bar for **Ark (Volcengine Agent/Coding Plan)**, **Kimi For Coding**, and **Ollama Cloud**.
+Subscription quota & pay-as-you-go balance in the [pi](https://github.com/earendil-works/pi-coding-agent) status bar. Ships **18 providers** across three data shapes: subscription windows, plan quotas, and prepaid balances.
 
 ```
 Ark 5h 91% ↺3h · wk 50% · mo 29%
 Kimi 5h 72% ↺45m · wk 14%
-Ollama 5h 2% ↺4h · wk 5%
+Codex 5h 5% · wk 24%
+GLM 5h 15% · wk 44%
+Copilot mo 12% ↺8d
+OpenRouter $12.08
+newapi-codex $20.32 spent
 ```
 
-- Provider name prefix (`Ark` / `Kimi` / `Ollama`), used percent per window
-- Color-graded: green < 70%, yellow < 90%, red ≥ 90%
+- Provider name prefix, used percent per window (or remaining amount for
+  balance-type providers)
+- Color-graded: green < 70%, yellow < 90%, red \u003e= 90%
 - Reset countdown per window, shown only while remaining quota is below a
-  configurable threshold (defaults: 5h < 80%, week < 40%); hours/minutes/days
+  configurable threshold (defaults: 5h \u003c 80%, week \u003c 40%); hours/minutes/days
   formatting (Ollama: predicted from the global reset grid — the API reports
   no reset times)
 - Width budget: when the status exceeds `maxWidth` (default 40 visible chars),
   the 5h reset is kept and the week reset is dropped first, then non-5h
   windows, then the 5h reset
-- Shows only while the active model belongs to a known provider
+- Shows only while the active model belongs to a known provider; unknown
+  OpenAI-compatible providers fall back to one-api/new-api billing probing
+  (auto-hidden when the gateway answers nothing)
 - Refreshes on a timer — 30s / 1min / 2min / 5min (default 1min); session
   start and model switches reuse a 5-minute cache. Failed fetches retry on
   exponential backoff (5min → 30min cap) instead of every tick, so a dead
@@ -46,13 +53,37 @@ pi install git:https://github.com/ArtrixTech/pi-cloud-quota
 
 Then restart pi (or `/reload`).
 
-## Provider setup
+## Provider coverage & status
 
-| Provider | Requirement |
-|---|---|
-| Ark | Official [`arkcli`](https://www.npmjs.com/package/@volcengine/ark-cli): `CI=1 npm i -g @volcengine/ark-cli && arkcli auth login volc-sso`. Works with both Agent Plan (`/api/plan/v3`) and Coding Plan (`/api/coding*`) — any provider whose baseUrl is on `volces.com`. The SSO session expires server-side ~48h after login; re-login with `/cloud-quota login` (the extension warns ~12h before expiry). |
-| Kimi | `kimi-coding` credential in `~/.pi/agent/auth.json` (API key or OAuth), e.g. via pi's built-in Kimi For Coding login. |
-| Ollama | `ollama-cloud` provider in `~/.pi/agent/models.json` with an `apiKey` (ollama.com). |
+Three status levels, stated per provider:
+
+- ✅ **verified** — exercised against a real account: live request succeeded and real quota/balance data was parsed.
+- 🟡 **endpoint verified** — request and auth path verified live (HTTP 200 / auth accepted); the local account has no active plan or was rejected at the business layer, so a real subscription display still needs confirmation from community users.
+- 🧪 **untested** — no local credential; implemented from official docs / multiple independent community implementations and response shapes. Users with real credentials are welcome to open issues with (sanitized) findings.
+
+| Provider | Status | Endpoint / channel | Credential lookup order |
+|---|---|---|---|
+| Ark (Volcengine) | ✅ verified | `arkcli usage plan` CLI snapshot | `arkcli` SSO session |
+| Kimi For Coding | ✅ verified | `GET api.kimi.com/coding/v1/usages` | pi auth `kimi-coding` (key/OAuth) |
+| Ollama Cloud | ✅ verified | `GET ollama.com/api/usage` | models.json `ollama-cloud.apiKey` |
+| OpenAI Codex (ChatGPT plan) | ✅ verified | `GET chatgpt.com/backend-api/wham/usage` (5h + weekly, credits-aware) | `~/.codex/auth.json` tokens → pi auth `openai-codex`; silent refresh on 401/403 (in-memory only) |
+| GitHub Copilot | ✅ verified | `GET api.github.com/copilot_internal/user` (premium → chat fallback; monthly) | `$GITHUB_TOKEN`/`$GH_TOKEN` → `gh auth token`; auto v2 token exchange on 401 |
+| OpenRouter (balance) | ✅ verified | `GET openrouter.ai/api/v1/credits` (`total_credits` − `total_usage`) | models.json → opencode store → `$OPENROUTER_API_KEY` |
+| one-api/new-api gateway (balance) | 🟡 endpoint verified | `GET {origin}/v1/dashboard/billing/subscription` + `/usage`; unlimited tokens (hard_limit 1e8) render as `… spent` | models.json `<provider>.apiKey`; probed automatically for any unmatched OpenAI-compatible provider, hidden after first failure |
+| GLM Coding Plan (bigmodel.cn / z.ai) | 🟡 endpoint verified | `GET {open.bigmodel.cn\|api.z.ai}/api/monitor/usage/quota/limit` (5h tokens + weekly + plan level); bare key first, `Bearer` retry on 401 | CN: pi auth/models.json `bigmodel-cn` → `$ZHIPUAI_API_KEY`; global: opencode store `zai`/`zai-coding-plan` → `$ZAI_API_KEY` |
+| Moonshot (balance) | 🟡 endpoint reachable, local key rejected (401) | `GET api.moonshot.cn\|api.moonshot.ai/v1/users/me/balance` | models.json `<provider>.apiKey` → opencode store `moonshotai-cn`/`moonshotai` → `$MOONSHOT_API_KEY` |
+| Anthropic Claude (subscription) | 🧪 untested | `GET api.anthropic.com/api/oauth/usage` + `anthropic-beta: oauth-2025-04-20` (5h/7d; plain `sk-ant-` keys stay hidden by design) | pi auth `anthropic` OAuth token |
+| MiniMax Coding Plan | 🧪 untested | `GET api.minimax.io\|api.minimaxi.com/v1/token_plan/remains` (5h + weekly; region auto-picked) | models.json → `$MINIMAX_API_KEY` |
+| Synthetic | 🧪 untested | `GET api.synthetic.new/v2/quotas` (rolling 5h requests) | `$SYNTHETIC_API_KEY` |
+| DeepSeek (balance) | 🧪 untested | `GET api.deepseek.com/user/balance` | models.json → `$DEEPSEEK_API_KEY` |
+| SiliconFlow (balance) | 🧪 untested | `GET api.siliconflow.cn\|.com/v1/user/info` | models.json → `$SILICONFLOW_API_KEY` |
+| StepFun (balance) | 🧪 untested | `GET api.stepfun.com/v1/accounts` (shape from public docs; needs a real account) | models.json → `$STEPFUN_API_KEY` |
+| xAI (credits) | 🧪 untested | `GET api.x.ai/v1/api-key` (credit grants) | models.json → `$XAI_API_KEY` |
+| DeepInfra (balance) | 🧪 untested | `GET api.deepinfra.com/payment/checklist?compute_owed=true` (prepaid deposit = negative `stripe_balance`) | models.json → `$DEEPINFRA_API_KEY` |
+| Vercel AI Gateway (balance) | 🧪 untested | `GET ai-gateway.vercel.sh/v1/credits` | models.json → `$VERCEL_AI_GATEWAY_API_KEY` |
+
+Failed fetches degrade to a dim `<provider> ✗`; missing subscriptions (e.g. GLM answers
+`当前用户不存在coding plan` with HTTP 200) surface the provider message in the error path.
 
 ## Notes
 
@@ -68,15 +99,65 @@ Then restart pi (or `/reload`).
 - Ollama's `session` window is displayed as `5h` by convention; the API gives no window duration or reset time.
 - Ollama Cloud resets are **global** — the same instant for every account — on an epoch-aligned grid: session resets every 5h (multiples of 5h since Unix epoch, so the hour cycles through all 24 over 5 days), weekly resets every 7d at Monday 00:00 UTC. The extension predicts the next reset locally (`nextReset`); community-verified against the settings-page countdown (ollama/ollama#12532).
 - Ark data comes from `arkcli` (console-identical snapshot), so no Volcengine API key is needed by this extension.
+- Codex access tokens are short-lived. On 401/403 the extension runs a
+  silent refresh against `auth.openai.com/oauth/token` (the well-known
+  Codex CLI client id) and keeps the fresh token in memory for 10 minutes;
+  it never writes credential files. Reading `~/.codex/auth.json` picks up
+  tokens refreshed by the Codex CLI itself.
+- GLM's monitor endpoint is an official plugin (`zai-coding-plugins`)
+  surface; it replies HTTP 200 with a business error for accounts without a
+  coding plan, which the extension reports as a failure (`✗`). Region
+  implementations disagree on `Bearer` vs bare key — both are attempted.
+- Gateway probing marks a (gateway, token) pair dead after the first
+  failure (some new-api deployments disable billing routes), so unrelated
+  tokens on the same gateway stay independent.
+- Most subscription endpoints above are internal/unpublished developer
+  surfaces documented by community tools (CodexBar, pi-quotas,
+  @satas/pi-usage-bar, openusage.sh). They work today and can change
+  without notice; treat breaking reports as expected.
+
+## Changelog
+
+### 0.5.0 — 2026-08-31
+
+- New providers (16 total): OpenAI Codex, GitHub Copilot, GLM Coding Plan
+  (bigmodel.cn + z.ai, auto-region), Anthropic Claude, MiniMax Coding Plan,
+  Synthetic, and balance-type OpenRouter, Moonshot, DeepSeek, SiliconFlow,
+  StepFun, xAI, DeepInfra, Vercel AI Gateway, plus automatic one-api/new-api
+  gateway billing probing.
+- New balance display type: `OpenRouter $12.08` / `newapi-codex $20.32
+  spent`, with remaining-fraction coloring when a limit is known.
+- Codex silent token refresh (in-memory, never writes credential files);
+  Copilot premium → chat quota fallback with v2 token exchange;
+  one-api-family gateway probing with per-token dead-marking and auto-hide.
+- Status statuses: `测试状态` per provider documented in the coverage table
+  above (✅ verified / 🟡 endpoint verified / 🧪 untested — community help
+  welcome for 🧪 rows).
+
+### 0.4.0
+
+- Ark SSO login from any model, `logged_in`-based login detection, model-
+  agnostic login flow.
+
+### 0.3.0 and earlier
+
+- Ark / Kimi / Ollama Cloud window quota, warnings, `/cloud-quota` settings
+  menu. See git history.
 
 ## Development
 
 The extension is plain TypeScript loaded directly by pi (no build step). The pure
-helpers (`parseArk` / `parseKimi` / `parseOllama` / `renderQuota` / `formatReset` / `nextReset`)
-are exported for offline testing:
+helpers (`parseArk` / `parseKimi` / `parseOllama` / `parseGlm` / `parseCodex` /
+`parseAnthropic` / `parseCopilot` / `parseMiniMax` / `parseSynthetic` /
+`parseOpenrouterCredits` / `parseGatewayBilling` / `parseMoonshotBalance` /
+`parseDeepseekBalance` / `parseSiliconflowBalance` / `parseStepfunBalance` /
+`parseXaiCredits` / `parseDeepinfraBalance` / `parseVercelBalance` /
+`renderQuota` / `renderBalance` / `formatReset` / `nextReset` /
+`parseDateish` / `matchSpec`) are exported for offline testing.
 
 ```bash
-node --experimental-strip-types your-test.mjs
+npx esbuild extensions/cloud-quota.ts --format=esm --outfile=/dev/null   # parse check
+node --experimental-strip-types your-test.mts                             # runtime tests
 ```
 
 ## License

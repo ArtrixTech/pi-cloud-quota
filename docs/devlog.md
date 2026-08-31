@@ -1,5 +1,47 @@
 # devlog
 
+## feat(providers): add 15 providers, balance display type, verified-status docs (v0.5.0)
+
+`tbd-v050` | 2026-08-31
+
+- **Changes**: extensions/cloud-quota.ts 738→~1580 lines — new window providers
+  (OpenAI Codex wham/usage + silent token refresh, GitHub Copilot
+  copilot_internal/user + v2 token exchange + premium→chat fallback, GLM
+  Coding Plan bigmodel.cn/z.ai monitor endpoint with bare-key→Bearer retry,
+  Anthropic oauth/usage with anthropic-beta header, MiniMax token_plan/remains
+  with region auto-pick, Synthetic v2/quotas); new balance-type providers
+  (OpenRouter credits, Moonshot, DeepSeek, SiliconFlow, StepFun, xAI,
+  DeepInfra, Vercel AI Gateway) with a second render path
+  (`OpenRouter $12.08` / `newapi-codex $20.32 spent`, remaining-fraction
+  coloring); automatic one-api/new-api gateway billing probing for unmatched
+  OpenAI-compatible providers with per-token dead-marking + auto-hide;
+  `Usage = Period[] | Balance` union through apply/render/cache/maybeWarn;
+  parse/fetch helpers exported for offline tests. package.json 0.4.0→0.5.0
+  (description + keywords), README rewritten with provider coverage table
+  (✅/🟡/🧪 test-status levels), changelog section.
+- **Reason**: user asked to add every integrable+verifiable provider and to
+  document which data paths have actually been tested (the ones that cannot
+  be tested locally are explicitly handed to open-source community users).
+- **Process**: prior research (query archive 2026-08-31, 4-lane subagents)
+  provided endpoints; shapes cross-checked against pi-quotas 0.4.0 source
+  (jsdelivr) and CodexBar docs; live verification via
+  `node --experimental-strip-types` runners against real accounts —
+  Codex `5h 5%` (token in ~/.codex/auth.json), Copilot `mo 0%` (free plan,
+  chat fallback + reset 09-01), OpenRouter `$12.08/140`, newapi-codex
+  gateway `$20.32 spent` (hard_limit 1e8 → spend mode), Kimi/Ollama
+  regressions green; GLM both regions return business error
+  当前用户不存在coding plan (local keys lack Coding Plan subscription);
+  Moonshot CN key from opencode store rejected 401; newapi main instance
+  rejects billing routes 401.
+- **Result**: esbuild parse OK; 7/13 new providers verified end-to-end or
+  endpoint-level with real accounts; documented 🟡/🧪 rows for community
+  validation.
+- **Notes**: all endpoints are internal/unpublished surfaces (documented by
+  CodexBar/pi-quotas/@satas/pi-usage-bar/openusage) and may drift; Codex
+  Team/EDU spend-control fields and Gemini/Antigravity/Cursor/Windsurf were
+  left out (research archive has the specs); pi auth store is never written
+  (Codex refresh stays in-process).
+
 ## feat(ark): exponential backoff on fetch failures, rate-limit-aware login
 
 `a13b597` | 2026-08-31

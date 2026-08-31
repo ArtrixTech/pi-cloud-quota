@@ -1,7 +1,7 @@
 {
 	"name": "pi-cloud-quota",
-	"version": "0.4.0",
-	"description": "Subscription quota in the pi status bar for Ark (Volcengine), Kimi For Coding, and Ollama Cloud",
+	"version": "0.5.0",
+	"description": "Subscription quota & pay-as-you-go balance in the pi status bar (Ark, Kimi, Ollama, Codex, GLM, Copilot, OpenRouter, and more)",
 	"license": "MIT",
 	"type": "module",
 	"keywords": [
@@ -11,10 +11,19 @@
 		"pi-coding-agent",
 		"quota",
 		"usage",
+		"balance",
 		"volcengine",
 		"ark",
 		"kimi",
-		"ollama"
+		"ollama",
+		"openai",
+		"codex",
+		"anthropic",
+		"copilot",
+		"glm",
+		"z.ai",
+		"minimax",
+		"openrouter"
 	],
 	"repository": {
 		"type": "git",
