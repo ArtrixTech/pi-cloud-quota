@@ -2,7 +2,7 @@
 
 ## docs(readme): provider-first intro + issues/PRs guide
 
-`tbd-readme-community` | 2026-08-31
+`b5d8f34` | 2026-08-31
 
 - **Changes**: README 简介 rewrite — explicit 18-provider list grouped by data
   shape (subscription windows / balance / gateway probing) with issue + PR
