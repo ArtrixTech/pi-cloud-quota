@@ -1,5 +1,22 @@
 # devlog
 
+## docs(readme): provider-first intro + issues/PRs guide
+
+`tbd-readme-community` | 2026-08-31
+
+- **Changes**: README 简介 rewrite — explicit 18-provider list grouped by data
+  shape (subscription windows / balance / gateway probing) with issue + PR
+  links right in the opening; new "Issues & PRs" section after the coverage
+  table (per-status expectations, what to include in an issue, the one-
+  parse-one-fetch-one-branch PR recipe, sanitize warning in EN+中文);
+  package.json description now enumerates the provider families.
+- **Reason**: user wants the project intro to state supported providers
+  explicitly and to route community problem reports and contributions to
+  issues/PRs (the 🟡/🧪 rows especially need real-account feedback).
+- **Result**: README renders with jump link (#issues--prs); package.json
+  stays valid JSON.
+- **Notes**: GitHub repo description synced via `gh repo edit` in the same
+  pass; devlog hash rides with the next commit.
 ## feat(providers): add 15 providers, balance display type, verified-status docs (v0.5.0)
 
 `c7b5687` | 2026-08-31

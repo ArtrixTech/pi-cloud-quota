@@ -1,7 +1,7 @@
 {
 	"name": "pi-cloud-quota",
 	"version": "0.5.0",
-	"description": "Subscription quota & pay-as-you-go balance in the pi status bar (Ark, Kimi, Ollama, Codex, GLM, Copilot, OpenRouter, and more)",
+	"description": "Subscription quota & pay-as-you-go balance in the pi status bar — Ark, Kimi, Ollama, OpenAI Codex, GitHub Copilot, Claude, GLM/z.ai, MiniMax, OpenRouter, new-api gateways and more",
 	"license": "MIT",
 	"type": "module",
 	"keywords": [

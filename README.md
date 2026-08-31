@@ -1,6 +1,14 @@
 # pi-cloud-quota
 
-Subscription quota & pay-as-you-go balance in the [pi](https://github.com/earendil-works/pi-coding-agent) status bar. Ships **18 providers** across three data shapes: subscription windows, plan quotas, and prepaid balances.
+Subscription quota & pay-as-you-go balance in the [pi](https://github.com/earendil-works/pi-coding-agent) status bar.
+
+**Supported providers (18)**
+
+- Subscription windows: **Ark** (Volcengine Agent/Coding Plan), **Kimi For Coding**, **Ollama Cloud**, **OpenAI Codex** (ChatGPT plan), **GitHub Copilot**, **Anthropic Claude**, **GLM Coding Plan** (bigmodel.cn / z.ai), **MiniMax Coding Plan**, **Synthetic**
+- Balance display: **OpenRouter**, **Moonshot**, **DeepSeek**, **SiliconFlow**, **StepFun**, **xAI**, **DeepInfra**, **Vercel AI Gateway**
+- One-api / new-api gateways: automatic billing probing for any self-hosted OpenAI-compatible gateway (new-api, one-api and derivatives)
+
+Wrong or missing numbers for one of these? [Open an issue](https://github.com/ArtrixTech/pi-cloud-quota/issues). Adding a provider or fixing one that drifted? Pull requests are welcome — see [Issues & PRs](#issues--prs).
 
 ```
 Ark 5h 91% ↺3h · wk 50% · mo 29%
@@ -84,6 +92,20 @@ Three status levels, stated per provider:
 
 Failed fetches degrade to a dim `<provider> ✗`; missing subscriptions (e.g. GLM answers
 `当前用户不存在coding plan` with HTTP 200) surface the provider message in the error path.
+
+## Issues & PRs
+
+Most endpoints here are internal developer surfaces documented by community
+tools (CodexBar, pi-quotas, @satas/pi-usage-bar, openusage.sh); a provider can
+break silently when the vendor changes it. The coverage table states exactly
+what has been verified against real accounts (✅), what is endpoint-verified
+but still needs a live subscription (🟡), and what is implemented from public
+implementations without a local credential (🧪). Community reports are the
+primary quality signal for the 🟡 and 🧪 rows.
+
+- **Wrong or missing numbers?** [Open an issue](https://github.com/ArtrixTech/pi-cloud-quota/issues) with: provider name, the pi model in use, the status line shown, and the failure path (a `<provider> ✗` carries the `HTTP <status>` or business error that caused it). Sanitize everything: no API keys, tokens, cookies, or account-identifying response payloads.
+- **Endpoint drifted, or a provider missing?** PRs welcome. Adding a provider = one exported parse function + one fetch function + one `matchSpec` branch (see Development below); keep `npx esbuild extensions/cloud-quota.ts --format=esm --outfile=/dev/null` clean, and flip the coverage-table row to ✅ once verified against a real account.
+- 提 issue / PR 前请务必脱敏：不要粘贴 API key、token、cookie 或带账号标识的响应内容。
 
 ## Notes
 
