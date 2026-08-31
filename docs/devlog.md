@@ -1,5 +1,38 @@
 # devlog
 
+## feat(ark): exponential backoff on fetch failures, rate-limit-aware login
+
+`a13b597` | 2026-08-31
+
+- **Changes**: `refresh()` records a per-spec failure streak and skips ticks
+  until `failureBackoffMs` (TTL 5min, 2x per streak, capped 30min) elapses;
+  success clears it. New helper `isArkRateLimited()` (/rate limit|too many
+  requests/i); the Ark catch branch checks it BEFORE `isArkNotLoggedIn`
+  (rate-limit payloads also contain the re-login phrase) and shows
+  `Ark 限流中` + a one-shot toast instead of the re-login toast. `arkLogin`'s
+  exit handler surfaces the rate-limit hint on both `.then` (status JSON)
+  and `.catch` (promisified execFile rejection carries stdout/stderr).
+- **Reason**: with the plugin live in several long-running pi sessions, a
+  5-day-old dead SSO session made the 30s loop hammer
+  `arkcli`'s token-exchange endpoint; Volcengine rate-limited the account
+  and every `/cloud-quota login` failed with "Too many requests" - the
+  retry advice made the lockout worse (more logins, more exchanges).
+- **User feedback**: "Warning: Ark 未登录（SSO 会话过期）...Error: Ark 登录失败，请重试"
+  (reported 2026-08-31; turn 1 asked whether installed vs latest versions
+  differ - they did not, 0.4.0 @ 103157a on both sides).
+- **Process**: circuit-breakered via chmod -x on the arkcli bin (all
+  sessions no-op'd); arkcli 1.0.18 -> 1.0.23 (its error message confirmed
+  the cause and gave an 894s cooldown); node --experimental-strip-types
+  behavior test on the exported helpers; tsc only complained about missing
+  env types, none in the diff.
+- **Result**: committed a13b597; login recovery scheduled after the
+  documented 894s window; sessions need a restart to load the new code.
+- **Notes**: arkcli 1.0.23 pauses renewal client-side on rate limit and
+  names "高频 arkcli 轮询或多个运行实例" as the cause - vendor-side
+  confirmation of the diagnosis. Old refresh token had expired 2026-08-26
+  12:41; token.json untouched since, so every login attempt was a fresh
+  exchange hitting the limit.
+
 ## feat(ark): allow SSO login regardless of current model
 
 `05c15fa` | 2026-08-24
