@@ -2,7 +2,7 @@
 
 ## feat(providers): add 15 providers, balance display type, verified-status docs (v0.5.0)
 
-`tbd-v050` | 2026-08-31
+`c7b5687` | 2026-08-31
 
 - **Changes**: extensions/cloud-quota.ts 738→~1580 lines — new window providers
   (OpenAI Codex wham/usage + silent token refresh, GitHub Copilot
