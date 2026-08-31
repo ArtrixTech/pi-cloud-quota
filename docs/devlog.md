@@ -2,7 +2,7 @@
 
 ## docs(readme): provider-first intro + issues/PRs guide
 
-`b5d8f34` | 2026-08-31
+`646d5e8` | 2026-08-31
 
 - **Changes**: README 简介 rewrite — explicit 18-provider list grouped by data
   shape (subscription windows / balance / gateway probing) with issue + PR
@@ -19,7 +19,7 @@
   pass; devlog hash rides with the next commit.
 ## feat(providers): add 15 providers, balance display type, verified-status docs (v0.5.0)
 
-`c7b5687` | 2026-08-31
+`1863bfd` | 2026-08-31
 
 - **Changes**: extensions/cloud-quota.ts 738→~1580 lines — new window providers
   (OpenAI Codex wham/usage + silent token refresh, GitHub Copilot
