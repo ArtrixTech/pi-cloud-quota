@@ -84,8 +84,14 @@
   the cause and gave an 894s cooldown); node --experimental-strip-types
   behavior test on the exported helpers; tsc only complained about missing
   env types, none in the diff.
-- **Result**: committed a13b597; login recovery scheduled after the
-  documented 894s window; sessions need a restart to load the new code.
+- **Result**: committed a13b597; recovery completed 2026-08-31 13:23. Two
+  silent windows (16min, 12min) still rate-limited; a 27min OS-level-silent
+  window (chmod -x circuit breaker) cleared it - the probe error flipped to
+  "refresh_token is invalid" (expected, expired 08-26), then one browser
+  SSO login succeeded first try. Post-login: logged_in=true, usage plan
+  returns data, arkLoginExpiryMs decodes the fresh ~48h token. arkcli
+  1.0.18 -> 1.0.23. Running sessions still carry pre-fix code; restart
+  needed to load the backoff.
 - **Notes**: arkcli 1.0.23 pauses renewal client-side on rate limit and
   names "高频 arkcli 轮询或多个运行实例" as the cause - vendor-side
   confirmation of the diagnosis. Old refresh token had expired 2026-08-26
