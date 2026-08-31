@@ -313,6 +313,11 @@ export function isArkNotLoggedIn(message: string): boolean {
 	return /arkcli auth login volc-sso|requires Volcengine Ark SSO STS/.test(message);
 }
 
+/** True when an arkcli message means the SSO/token endpoint is rate-limiting us. */
+export function isArkRateLimited(message: string): boolean {
+	return /rate limit|too many requests/i.test(message);
+}
+
 const ARKCLI_IDENTITIES_DIR = join(homedir(), ".arkcli", "identities");
 
 /**
@@ -452,6 +457,11 @@ export default function (pi: ExtensionAPI) {
 	let lastCtx: ExtensionContext | undefined;
 	const cache: Record<string, { periods: Period[]; fetchedAt: number }> = {};
 	const inFlight = new Set<string>();
+	/** Last fetch failure per spec; drives exponential backoff instead of retrying every tick. */
+	const lastFailure: Record<string, { at: number; streak: number }> = {};
+	/** Backoff after a failed fetch: TTL, 2×TTL, 4×TTL, capped at 30min. */
+	const failureBackoffMs = (streak: number): number =>
+		Math.min(TTL_MS * 2 ** (streak - 1), 30 * 60_000);
 
 	const lastSeverity = new Map<string, Severity>();
 
@@ -503,19 +513,38 @@ export default function (pi: ExtensionAPI) {
 			maybeWarn(ctx, spec, hit.periods);
 			return;
 		}
+		const fail = lastFailure[spec.name];
+		if (!force && fail && Date.now() - fail.at < failureBackoffMs(fail.streak))
+			return;
 		if (inFlight.has(spec.name)) return;
 		inFlight.add(spec.name);
 		try {
 			const periods = await spec.fetch();
 			cache[spec.name] = { periods, fetchedAt: Date.now() };
+			delete lastFailure[spec.name];
 			apply(ctx, spec, periods);
 			maybeWarn(ctx, spec, periods);
 			notified.delete("ark-needs-login");
+			notified.delete("ark-rate-limited");
 			if (spec.name === "Ark") maybeWarnLoginExpiry(ctx);
 		} catch (e) {
+			lastFailure[spec.name] = {
+				at: Date.now(),
+				streak: (fail?.streak ?? 0) + 1,
+			};
 			if (!cache[spec.name] && !(spec.name === "Ark" && loginInFlight)) {
 				const msg = e instanceof Error ? e.message : String(e);
-				if (spec.name === "Ark" && isArkNotLoggedIn(msg)) {
+				if (spec.name === "Ark" && isArkRateLimited(msg)) {
+					ctx.ui.setStatus(
+						STATUS_KEY,
+						ctx.ui.theme.fg("dim", `${spec.name} 限流中`),
+					);
+					notifyOnce(
+						ctx,
+						"ark-rate-limited",
+						"Ark 端点限流，刷新已退避暂停；限流解除后自动恢复",
+					);
+				} else if (spec.name === "Ark" && isArkNotLoggedIn(msg)) {
 					ctx.ui.setStatus(
 						STATUS_KEY,
 						ctx.ui.theme.fg("dim", `${spec.name} 未登录`),
@@ -605,14 +634,28 @@ export default function (pi: ExtensionAPI) {
 			execFileP("arkcli", ["auth", "status"], { timeout: 10_000 })
 				.then(({ stdout }) => {
 					const ok = arkAuthOk(stdout);
+					if (ok) {
+						finish(true, "Ark 登录成功，用量已刷新");
+						return;
+					}
 					finish(
-						ok,
-						ok
-							? "Ark 登录成功，用量已刷新"
+						false,
+						isArkRateLimited(stdout)
+							? "Ark 登录被限流（token 交换被拒绝），等几分钟后重试 /cloud-quota login"
 							: `Ark 登录失败（exit ${code ?? "?"}），请重试`,
 					);
 				})
-				.catch(() => finish(false, "Ark 登录失败，请重试"));
+				.catch(
+					(e: NodeJS.ErrnoException & { stdout?: string; stderr?: string }) => {
+						const output = `${e?.stdout ?? ""}${e?.stderr ?? ""}${e?.message ?? ""}`;
+						finish(
+							false,
+							isArkRateLimited(output)
+								? "Ark 登录被限流（token 交换被拒绝），等几分钟后重试 /cloud-quota login"
+								: "Ark 登录失败，请重试",
+						);
+					},
+				);
 		});
 	}
 

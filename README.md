@@ -19,14 +19,18 @@ Ollama 5h 2% ↺4h · wk 5%
   windows, then the 5h reset
 - Shows only while the active model belongs to a known provider
 - Refreshes on a timer — 30s / 1min / 2min / 5min (default 1min); session
-  start and model switches reuse a 5-minute cache
+  start and model switches reuse a 5-minute cache. Failed fetches retry on
+  exponential backoff (5min → 30min cap) instead of every tick, so a dead
+  SSO session never hammers the token-exchange endpoint into a rate limit
 - Ark SSO lifecycle: when the Ark session is missing/expired the status shows
   `Ark 未登录` (instead of a silent `✗`), and a toast tells you to run
   `/cloud-quota login` — one command that opens the browser SSO flow and
   refreshes the quota automatically on completion (also available as the
   first entry of the `/cloud-quota` menu). The local refresh token is decoded
   to warn ~12h before the server-side expiry (tokens are not rotated; each
-  login is valid ~48h)
+  login is valid ~48h). When the token-exchange endpoint is rate-limiting
+  the account, the status shows `Ark 限流中` and login failures say to wait
+  instead of retrying
 - Quota warnings: toast on severity escalation (80% warning / 90% high /
   100% critical); only critical notifies at error level
 - All display options adjustable via `/cloud-quota` or
